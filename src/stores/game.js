@@ -7,6 +7,7 @@
 
 import { defineStore } from 'pinia'
 import { getEventById, getRandomEvents } from '../data/events'
+import { childhoodEvents, masterOptions, mbtiNames } from '../data/childhood'
 
 const LIFE_STAGES = {
   baby:   { min: 0,   max: 60,  name: '幼年期', icon: '👶' },
@@ -97,6 +98,16 @@ export const useGameStore = defineStore('game', {
       maxKnowledge: 0,
       maxCharm: 0
     },
+    
+    // 幼年养成系统
+    childhoodPhase: true,  // 是否在幼年阶段
+    childhoodIndex: 0,     // 当前幼年事件索引
+    displayedOptions: [],   // 当前显示的4个选项
+    devScores: { martial: 0, knowledge: 0, craft: 0, social: 0, morality: 0 },
+    mbtiScores: { E: 0, I: 0, S: 0, N: 0, T: 0, F: 0, J: 0, P: 0 },
+    masterType: null,       // 11岁拜师方向
+    mainQuest: null,        // 14岁家变主线
+    mainQuestDesc: '',      // 主线描述,
     
     ending: null
   }),
@@ -228,26 +239,25 @@ export const useGameStore = defineStore('game', {
       
       this.character.title = '初生婴儿'
       this.gameStarted = true
+      this.childhoodPhase = true
+      this.childhoodIndex = 0
       
-      this.currentEvent = {
-        id: 'birth',
-        title: `出生在${bg.place}`,
-        description: bg.desc,
-        type: 'story',
-        timeCost: 0,
-        category: 'growth',
-        feedback: `你睁开眼睛，看到了这个世界的光。${bg.family}的日子，就这样开始了。`,
-        choices: [
-          { text: '（睁开眼睛，看看这个世界）', nextEvent: 'baby_grow', effects: {} }
-        ]
-      }
-      this.eventHistory.push('birth')
+      // 加载第一个幼年事件（0岁·降生）
+      this.loadChildhoodEvent()
+      
+      // 记录出生大事
+      this.lifeMilestones.push({ stage: '出生', text: `生于${bg.place}${bg.family}` })
     },
     
     makeChoice(choiceIndex) {
       if (!this.currentEvent || !this.currentEvent.choices[choiceIndex]) return
       
       const choice = this.currentEvent.choices[choiceIndex]
+      
+      // 幼年阶段使用专门的处理逻辑
+      if (this.childhoodPhase) {
+        return this.makeChildhoodChoice(choice)
+      }
       
       if (!this.meetsRequirements(choice.requirements)) {
         return { success: false, message: '条件不满足' }
@@ -625,6 +635,248 @@ export const useGameStore = defineStore('game', {
       if (this.recentEventIds.length > 12) {
         this.recentEventIds = this.recentEventIds.slice(-8)
       }
+    },
+    
+    // ========== 幼年养成系统 ==========
+    
+    // 从8个选项中随机选4个
+    getRandomOptions(options, count = 4) {
+      const shuffled = [...options].sort(() => Math.random() - 0.5)
+      return shuffled.slice(0, count)
+    },
+    
+    // 加载幼年事件
+    loadChildhoodEvent() {
+      const evt = childhoodEvents[this.childhoodIndex]
+      if (!evt) {
+        this.endChildhood()
+        return
+      }
+      
+      // 特殊处理：11岁拜师
+      if (evt.age === 11) {
+        this.generateMasterEvent()
+        return
+      }
+      
+      // 特殊处理：14岁家变
+      if (evt.age === 14) {
+        this.generateTragedyEvent()
+        return
+      }
+      
+      // 从8个选项中随机选4个显示
+      this.displayedOptions = this.getRandomOptions(evt.options, 4)
+      
+      // 构造成 currentEvent 格式供 UI 使用
+      this.currentEvent = {
+        id: evt.id,
+        title: evt.title,
+        description: evt.description,
+        type: 'childhood',
+        category: 'growth',
+        choices: this.displayedOptions.map((opt, i) => ({
+          text: opt.text,
+          index: i
+        }))
+      }
+      this.eventHistory.push(evt.id)
+    },
+    
+    // 处理幼年选择
+    makeChildhoodChoice(choice) {
+      const evt = childhoodEvents[this.childhoodIndex]
+      const option = this.displayedOptions[choice.index]
+      if (!option) return
+      
+      const changes = {}
+      
+      // 应用属性效果
+      if (option.effects) {
+        for (const [attr, value] of Object.entries(option.effects)) {
+          if (this.attributes[attr] !== undefined) {
+            const before = this.attributes[attr]
+            this.attributes[attr] = Math.max(0, this.attributes[attr] + value)
+            const after = this.attributes[attr]
+            if (before !== after) changes[attr] = after - before
+          }
+        }
+      }
+      
+      // 应用发育积分（6-10岁）
+      if (option.dev) {
+        for (const [track, value] of Object.entries(option.dev)) {
+          this.devScores[track] = (this.devScores[track] || 0) + value
+        }
+      }
+      
+      // 应用MBTI倾向
+      if (option.mbti) {
+        for (const [dim, value] of Object.entries(option.mbti)) {
+          this.mbtiScores[dim] = (this.mbtiScores[dim] || 0) + value
+        }
+      }
+      
+      // 5岁选择发育方向
+      if (option.direction) {
+        this.devScores[option.direction] = (this.devScores[option.direction] || 0) + 3
+      }
+      
+      // 14岁家变选择
+      if (option.tragedy) {
+        this.mainQuest = option.tragedy
+      }
+      
+      // 11岁拜师：设置门派
+      if (this.currentEvent?.id === 'child_11_master' && option.faction) {
+        this.character.faction = option.faction
+        if (option.faction !== '无门无派') {
+          this.lifeMilestones.push({ stage: '少年', text: `拜入${option.faction}` })
+        }
+      }
+      
+      // 更新统计
+      this.stats.choicesMade++
+      this.stats.turns++
+      this.character.age = evt.age * 12  // 同步年龄（月）
+      this.character.title = this.titleLevel
+      
+      // 生成反馈
+      const feedbackText = this.generateChildhoodFeedback(option, changes)
+      if (feedbackText) {
+        this.feedback = { text: feedbackText, changes }
+      } else {
+        this.feedback = null
+      }
+      
+      // 进入下一个幼年事件
+      this.childhoodIndex++
+      return { success: true }
+    },
+    
+    // 继续到下一个幼年事件（由UI调用，点击"继续"按钮后）
+    nextChildhoodEvent() {
+      this.loadChildhoodEvent()
+    },
+    
+    // 生成11岁拜师事件
+    generateMasterEvent() {
+      // 找出发育积分最高的方向
+      const scores = this.devScores
+      const topTrack = Object.entries(scores).sort((a, b) => b[1] - a[1])[0]
+      const trackName = topTrack[0]  // martial/knowledge/craft/social/morality
+      this.masterType = trackName
+      
+      // 从该方向的8个师父中随机选4个
+      const options = masterOptions[trackName] || masterOptions.martial
+      this.displayedOptions = this.getRandomOptions(options, 4)
+      
+      const trackLabels = {
+        martial: '武道', knowledge: '文道', craft: '技道', social: '社交', morality: '修道'
+      }
+      
+      this.currentEvent = {
+        id: 'child_11_master',
+        title: '拜师',
+        description: `你在${trackLabels[trackName]}方面展现出了天赋。一位高人看中了你，愿意收你为徒。`,
+        type: 'childhood',
+        category: 'growth',
+        choices: this.displayedOptions.map((opt, i) => ({
+          text: opt.text,
+          index: i
+        }))
+      }
+      this.eventHistory.push('child_11_master')
+      
+      // 拜师选择需要特殊处理：设置门派
+      this._masterOptions = this.displayedOptions
+    },
+    
+    // 生成14岁家变事件
+    generateTragedyEvent() {
+      const evt = childhoodEvents.find(e => e.age === 14)
+      const tragedyTypes = evt.tragedyTypes
+      const tragedy = tragedyTypes[Math.floor(Math.random() * tragedyTypes.length)]
+      
+      this.mainQuest = tragedy.id
+      this.mainQuestDesc = tragedy.mainQuest
+      
+      // 从8个反应中随机选4个
+      this.displayedOptions = this.getRandomOptions(evt.options, 4)
+      
+      this.currentEvent = {
+        id: 'child_14_tragedy',
+        title: tragedy.title,
+        description: tragedy.desc,
+        type: 'childhood',
+        category: 'growth',
+        choices: this.displayedOptions.map((opt, i) => ({
+          text: opt.text,
+          index: i
+        }))
+      }
+      this.eventHistory.push('child_14_tragedy')
+      
+      // 记录大事
+      this.lifeMilestones.push({ stage: '少年', text: tragedy.title })
+    },
+    
+    // 幼年反馈生成
+    generateChildhoodFeedback(option, changes) {
+      const parts = []
+      const attrNames = {
+        martial: '武功', knowledge: '学识', charm: '颜值',
+        reputation: '声望', wealth: '财富', health: '健康', morality: '道德'
+      }
+      
+      for (const [attr, val] of Object.entries(changes)) {
+        const name = attrNames[attr] || attr
+        if (attr === 'wealth') {
+          if (val > 0) parts.push(`家中多了${Math.abs(val)}文`)
+        } else if (val > 0) {
+          parts.push(`${name}+${val}`)
+        }
+      }
+      
+      return parts.length > 0 ? parts.join('。') + '。' : ''
+    },
+    
+    // 幼年阶段结束，进入少年阶段
+    endChildhood() {
+      this.childhoodPhase = false
+      
+      // 计算MBTI类型
+      const mbti = this.calculateMBTI()
+      this.character.mbti = mbti
+      this.character.mbtiName = mbtiNames[mbti] || '江湖新手'
+      
+      // 记录大事
+      this.lifeMilestones.push({ stage: '少年', text: `性格定型：${mbti}（${mbtiNames[mbti] || ''}）` })
+      if (this.masterType) {
+        const trackLabels = { martial: '武道', knowledge: '文道', craft: '技道', social: '社交', morality: '修道' }
+        this.lifeMilestones.push({ stage: '少年', text: `天赋方向：${trackLabels[this.masterType]}` })
+      }
+      if (this.mainQuestDesc) {
+        this.lifeMilestones.push({ stage: '少年', text: `主线：${this.mainQuestDesc}` })
+      }
+      
+      // 设置年龄为15岁
+      this.character.age = 15 * 12
+      this.character.title = this.titleLevel
+      
+      // 进入正常事件系统（从少年阶段开始）
+      this.triggerRandomEvent()
+    },
+    
+    // 计算MBTI类型
+    calculateMBTI() {
+      const s = this.mbtiScores
+      return [
+        s.E >= s.I ? 'E' : 'I',
+        s.S >= s.N ? 'S' : 'N',
+        s.T >= s.F ? 'T' : 'F',
+        s.J >= s.P ? 'J' : 'P'
+      ].join('')
     },
     
     checkEndings() {

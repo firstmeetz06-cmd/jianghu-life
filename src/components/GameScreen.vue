@@ -120,6 +120,7 @@ import { ref, computed } from 'vue'
 import { useGameStore } from '../stores/game'
 import { attributeConfig } from '../utils/config'
 import { getEventById } from '../data/events'
+import { childhoodEvents } from '../data/childhood'
 import { icon } from '../utils/icons'
 
 const gameStore = useGameStore()
@@ -133,6 +134,7 @@ const currentEvent = computed(() => gameStore.currentEvent)
 const eventHistory = computed(() => gameStore.eventHistory)
 const lifeStageInfo = computed(() => gameStore.lifeStageInfo)
 const feedback = computed(() => gameStore.feedback)
+const childhoodPhase = computed(() => gameStore.childhoodPhase)
 
 function meetsReq(req) { return gameStore.meetsRequirements(req) }
 
@@ -159,13 +161,25 @@ function formatAge(months) {
   return `${y}岁${m}月`
 }
 
-const typeMap = { story:'剧情', encounter:'遭遇', martial:'武学', danger:'危险', opportunity:'机遇', moral:'抉择', faction:'门派', romance:'情缘', ending:'结局' }
+const typeMap = { story:'剧情', encounter:'遭遇', martial:'武学', danger:'危险', opportunity:'机遇', moral:'抉择', faction:'门派', romance:'情缘', ending:'结局', childhood:'成长' }
 function getEventType(t) { return typeMap[t] || '事件' }
-function getEventTitle(id) { const e = getEventById(id); return e ? e.title : id }
+function getEventTitle(id) {
+  const e = getEventById(id)
+  if (e) return e.title
+  const ce = childhoodEvents.find(c => c.id === id)
+  if (ce) return ce.title
+  return id
+}
 function fmtReq(req) { return Object.entries(req).map(([a, v]) => `${attributeConfig[a]?.name || a} ≥ ${v}`).join('  ') }
 
 function handleChoice(i) { gameStore.makeChoice(i) }
-function dismissFeedback() { gameStore.dismissFeedback() }
+function dismissFeedback() {
+  if (childhoodPhase.value) {
+    gameStore.nextChildhoodEvent()
+  } else {
+    gameStore.dismissFeedback()
+  }
+}
 
 function flash(msg) { toastMsg.value = msg; setTimeout(() => toastMsg.value = '', 2000) }
 function saveGame() { if (gameStore.saveGame()) flash('已存档') }
