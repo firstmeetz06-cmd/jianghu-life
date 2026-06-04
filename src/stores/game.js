@@ -830,6 +830,7 @@ export const useGameStore = defineStore('game', {
         reputation: '声望', wealth: '财富', health: '健康', morality: '道德'
       }
       
+      // 属性变化
       for (const [attr, val] of Object.entries(changes)) {
         const name = attrNames[attr] || attr
         if (attr === 'wealth') {
@@ -839,7 +840,15 @@ export const useGameStore = defineStore('game', {
         }
       }
       
-      return parts.length > 0 ? parts.join('。') + '。' : ''
+      // 发育积分变化（6-10岁）
+      if (option.dev) {
+        const devNames = { martial: '武道', knowledge: '文道', craft: '技道', social: '社交', morality: '修道' }
+        for (const [track, val] of Object.entries(option.dev)) {
+          parts.push(`${devNames[track] || track}+${val}`)
+        }
+      }
+      
+      return parts.length > 0 ? parts.join('。') + '。' : '你做出了选择。'
     },
     
     // 幼年阶段结束，进入少年阶段
