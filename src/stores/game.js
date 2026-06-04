@@ -294,7 +294,7 @@ export const useGameStore = defineStore('game', {
       this.stats.maxKnowledge = Math.max(this.stats.maxKnowledge, this.attributes.knowledge)
       this.stats.maxCharm = Math.max(this.stats.maxCharm, this.attributes.charm)
       
-      const timeCost = this.currentEvent.timeCost ?? 1
+      const timeCost = 12  // 一回合一岁
       this.character.age += timeCost
       this.character.title = this.titleLevel
       
