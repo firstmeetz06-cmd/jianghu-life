@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  base: '/jianghu-life/',
   server: {
     port: 5180,
     host: '0.0.0.0'
