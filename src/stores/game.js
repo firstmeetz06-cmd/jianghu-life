@@ -756,6 +756,7 @@ export const useGameStore = defineStore('game', {
     
     // 继续到下一个幼年事件（由UI调用，点击"继续"按钮后）
     nextChildhoodEvent() {
+      this.feedback = null  // 清空旧反馈，否则模板不会显示新选项
       this.loadChildhoodEvent()
     },
     
